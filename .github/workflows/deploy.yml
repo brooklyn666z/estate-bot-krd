@@ -55,10 +55,6 @@ jobs:
 
       - name: Activate release on server
         uses: appleboy/ssh-action@v1.2.0
-        env:
-          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
-          RELEASE_NAME: ${{ env.RELEASE_NAME }}
-          PHP_BIN: ${{ secrets.PHP_BIN }}
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
@@ -67,10 +63,12 @@ jobs:
           script_stop: true
           script: |
             set -e
-            DEPLOY_PATH="${DEPLOY_PATH:-$HOME/apps/estate-bot}"
-            PHP_BIN="${PHP_BIN:-php}"
-            REL_DIR="$DEPLOY_PATH/releases/$RELEASE_NAME"
 
+            DEPLOY_PATH="${DEPLOY_PATH:-/home/${USER}/apps/estate-bot}"
+            PHP_BIN="${PHP_BIN:-php}"
+            REL_DIR="$DEPLOY_PATH/releases/${RELEASE_NAME}"
+
+            # shared
             ln -sfn "$DEPLOY_PATH/shared/.env" "$REL_DIR/.env"
             rm -rf "$REL_DIR/storage"
             ln -sfn "$DEPLOY_PATH/shared/storage" "$REL_DIR/storage"
@@ -89,4 +87,5 @@ jobs:
             ln -sfn "$REL_DIR" "$DEPLOY_PATH/current"
             chmod -R ug+rw "$DEPLOY_PATH/shared/storage" "$DEPLOY_PATH/shared/bootstrap/cache" || true
 
-            echo "✅ Deployed $RELEASE_NAME"
+            echo "✅ Deployed ${RELEASE_NAME}"
+
