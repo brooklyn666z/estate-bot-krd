@@ -27,60 +27,65 @@ jobs:
       - name: Set release name
         run: echo "RELEASE_NAME=$(date +'%Y%m%d%H%M%S')" >> $GITHUB_ENV
 
-      - name: Upload files via rsync
-        uses: appleboy/ssh-action@v1.2.0
+      - name: Add SSH key
+        uses: webfactory/ssh-agent@v0.9.0
         with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          port: ${{ secrets.SSH_PORT }}
-          script_stop: true
-          script: |
-            set -e
-            DEPLOY_PATH="${{ secrets.DEPLOY_PATH }}"
-            RELEASE="${{ env.RELEASE_NAME }}"
-            REL_DIR="$DEPLOY_PATH/releases/$RELEASE"
+          ssh-private-key: ${{ secrets.SSH_KEY }}
 
-            mkdir -p "$REL_DIR"
+      - name: Add known_hosts
+        run: ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Run rsync from GitHub to server
+      - name: Rsync to server (new release)
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          RELEASE_NAME: ${{ env.RELEASE_NAME }}
         run: |
+          : ${SSH_PORT:=22}
           rsync -az --delete \
             --exclude ".git" \
+            --exclude ".github" \
             --exclude "node_modules" \
             --exclude "tests" \
-            --exclude ".github" \
-            -e "ssh -p ${{ secrets.SSH_PORT }} -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no" \
-            ./ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.DEPLOY_PATH }}/releases/${{ env.RELEASE_NAME }}/
+            -e "ssh -p ${SSH_PORT}" ./ \
+            "${SSH_USER}@${SSH_HOST}:${DEPLOY_PATH}/releases/${RELEASE_NAME}/"
 
       - name: Activate release on server
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          RELEASE_NAME: ${{ env.RELEASE_NAME }}
+          PHP_BIN: ${{ secrets.PHP_BIN }}
         run: |
-          ssh -o StrictHostKeyChecking=no -p ${{ secrets.SSH_PORT }} \
-            ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOSSH'
-              set -e
+          : ${SSH_PORT:=22}
+          : ${PHP_BIN:=php}
 
-              DEPLOY_PATH="${DEPLOY_PATH:-/home/u3254477/apps/estate-bot}"
-              PHP_BIN="${PHP_BIN:-php}"
-              REL_DIR="$DEPLOY_PATH/releases/${RELEASE_NAME}"
+          ssh -p ${SSH_PORT} ${SSH_USER}@${SSH_HOST} bash << EOSSH
+          set -e
+          DEPLOY_PATH="${DEPLOY_PATH:-/home/${SSH_USER}/apps/estate-bot}"
+          REL_DIR="\$DEPLOY_PATH/releases/${RELEASE_NAME}"
 
-              # shared
-              ln -sfn "$DEPLOY_PATH/shared/.env" "$REL_DIR/.env"
-              rm -rf "$REL_DIR/storage"
-              ln -sfn "$DEPLOY_PATH/shared/storage" "$REL_DIR/storage"
-              mkdir -p "$DEPLOY_PATH/shared/bootstrap/cache"
-              ln -sfn "$DEPLOY_PATH/shared/bootstrap/cache" "$REL_DIR/bootstrap/cache"
+          ln -sfn "\$DEPLOY_PATH/shared/.env" "\$REL_DIR/.env"
+          rm -rf "\$REL_DIR/storage"
+          ln -sfn "\$DEPLOY_PATH/shared/storage" "\$REL_DIR/storage"
+          mkdir -p "\$DEPLOY_PATH/shared/bootstrap/cache"
+          ln -sfn "\$DEPLOY_PATH/shared/bootstrap/cache" "\$REL_DIR/bootstrap/cache"
 
-              cd "$REL_DIR"
+          cd "\$REL_DIR"
 
-              $PHP_BIN artisan key:generate --force || true
-              $PHP_BIN artisan storage:link || true
-              $PHP_BIN artisan config:cache
-              $PHP_BIN artisan route:cache || true
-              $PHP_BIN artisan view:cache || true
-              $PHP_BIN artisan migrate --force || true
+          ${PHP_BIN} artisan key:generate --force || true
+          ${PHP_BIN} artisan storage:link || true
+          ${PHP_BIN} artisan config:cache
+          ${PHP_BIN} artisan route:cache || true
+          ${PHP_BIN} artisan view:cache || true
+          ${PHP_BIN} artisan migrate --force || true
 
-              ln -sfn "$REL_DIR" "$DEPLOY_PATH/current"
-              chmod -R ug+rw "$DEPLOY_PATH/shared/storage" "$DEPLOY_PATH/shared/bootstrap/cache" || true
+          ln -sfn "\$REL_DIR" "\$DEPLOY_PATH/current"
+          chmod -R ug+rw "\$DEPLOY_PATH/shared/storage" "\$DEPLOY_PATH/shared/bootstrap/cache" || true
 
-              echo "✅ Deployed ${RELEASE_NAME}"
+          echo "✅ Deployed ${RELEASE_NAME}"
           EOSSH
