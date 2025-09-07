@@ -24,7 +24,7 @@ jobs:
         run: |
           composer install --no-dev --prefer-dist --no-interaction --no-progress --optimize-autoloader
 
-      # Если позже будет Vite — здесь setup-node + npm ci && npm run build
+      # Если позже будет Vite — здесь setup-node + npm ci && npm run build1
 
       - name: Set release name
         run: echo "RELEASE_NAME=$(date +'%Y%m%d%H%M%S')" >> $GITHUB_ENV
