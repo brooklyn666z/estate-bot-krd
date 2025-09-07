@@ -24,31 +24,34 @@ jobs:
         run: |
           composer install --no-dev --prefer-dist --no-interaction --no-progress --optimize-autoloader
 
-      # Если позже будет Vite — здесь setup-node + npm ci && npm run build1
-
       - name: Set release name
         run: echo "RELEASE_NAME=$(date +'%Y%m%d%H%M%S')" >> $GITHUB_ENV
 
-      - name: Rsync files to server (new release)
-        uses: appleboy/rsync-action@v0.1.7
+      - name: Upload files via rsync
+        uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT }}
-          source: "./"
-          target: "${{ secrets.DEPLOY_PATH }}/releases/${{ env.RELEASE_NAME }}/"
-          # важные параметры rsync:
-          args: >
-            --archive
-            --compress
-            --delete
-            --human-readable
-            --itemize-changes
-            --exclude ".git"
-            --exclude "node_modules"
-            --exclude "tests"
-            --exclude ".github"
+          script_stop: true
+          script: |
+            set -e
+            DEPLOY_PATH="${{ secrets.DEPLOY_PATH }}"
+            RELEASE="${{ env.RELEASE_NAME }}"
+            REL_DIR="$DEPLOY_PATH/releases/$RELEASE"
+
+            mkdir -p "$REL_DIR"
+
+      - name: Run rsync from GitHub to server
+        run: |
+          rsync -az --delete \
+            --exclude ".git" \
+            --exclude "node_modules" \
+            --exclude "tests" \
+            --exclude ".github" \
+            -e "ssh -p ${{ secrets.SSH_PORT }} -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no" \
+            ./ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.DEPLOY_PATH }}/releases/${{ env.RELEASE_NAME }}/
 
       - name: Activate release on server
         uses: appleboy/ssh-action@v1.2.0
@@ -64,35 +67,26 @@ jobs:
           script_stop: true
           script: |
             set -e
-
             DEPLOY_PATH="${DEPLOY_PATH:-$HOME/apps/estate-bot}"
             PHP_BIN="${PHP_BIN:-php}"
             REL_DIR="$DEPLOY_PATH/releases/$RELEASE_NAME"
 
-            # shared links
             ln -sfn "$DEPLOY_PATH/shared/.env" "$REL_DIR/.env"
-
             rm -rf "$REL_DIR/storage"
             ln -sfn "$DEPLOY_PATH/shared/storage" "$REL_DIR/storage"
-
             mkdir -p "$DEPLOY_PATH/shared/bootstrap/cache"
             ln -sfn "$DEPLOY_PATH/shared/bootstrap/cache" "$REL_DIR/bootstrap/cache"
 
             cd "$REL_DIR"
 
-            # оптимизация и миграции
             $PHP_BIN artisan key:generate --force || true
             $PHP_BIN artisan storage:link || true
-
             $PHP_BIN artisan config:cache
             $PHP_BIN artisan route:cache || true
             $PHP_BIN artisan view:cache || true
-
             $PHP_BIN artisan migrate --force || true
 
-            # атомарное переключение current
             ln -sfn "$REL_DIR" "$DEPLOY_PATH/current"
-
             chmod -R ug+rw "$DEPLOY_PATH/shared/storage" "$DEPLOY_PATH/shared/bootstrap/cache" || true
 
             echo "✅ Deployed $RELEASE_NAME"
