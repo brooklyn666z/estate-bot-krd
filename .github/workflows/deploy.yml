@@ -21,12 +21,17 @@ jobs:
           coverage: none
 
       - name: Install Composer deps (prod)
+        env:
+          COMPOSER_PROCESS_TIMEOUT: 0
+          COMPOSER_NO_INTERACTION: 1
+          COMPOSER_NO_AUDIT: 1
         run: |
           composer install --no-dev --prefer-dist --no-interaction --no-progress --optimize-autoloader
 
       - name: Set release name
         run: echo "RELEASE_NAME=$(date +'%Y%m%d%H%M%S')" >> $GITHUB_ENV
 
+      # Ключ для ssh/scp
       - name: Add SSH key
         uses: webfactory/ssh-agent@v0.9.0
         with:
@@ -35,7 +40,20 @@ jobs:
       - name: Add known_hosts
         run: ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Rsync to server (new release)
+      # Делаем стабильный снимок и упаковываем (без ошибок "file changed as we read it")
+      - name: Create release archive
+        run: |
+          mkdir -p deploy/${RELEASE_NAME}
+          rsync -a \
+            --exclude=".git" \
+            --exclude=".github" \
+            --exclude="node_modules" \
+            --exclude="tests" \
+            ./ deploy/${RELEASE_NAME}/
+          tar -czf release.tar.gz -C deploy ${RELEASE_NAME}
+
+      # Готовим папки на сервере и заливаем архив
+      - name: Upload & unpack on server
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_PORT: ${{ secrets.SSH_PORT }}
@@ -44,15 +62,12 @@ jobs:
           RELEASE_NAME: ${{ env.RELEASE_NAME }}
         run: |
           : ${SSH_PORT:=22}
-          rsync -az --delete \
-            --exclude ".git" \
-            --exclude ".github" \
-            --exclude "node_modules" \
-            --exclude "tests" \
-            -e "ssh -p ${SSH_PORT}" ./ \
-            "${SSH_USER}@${SSH_HOST}:${DEPLOY_PATH}/releases/${RELEASE_NAME}/"
+          ssh -p "${SSH_PORT}" ${SSH_USER}@${SSH_HOST} "mkdir -p '${DEPLOY_PATH}/releases/${RELEASE_NAME}' '${DEPLOY_PATH}/shared/storage' '${DEPLOY_PATH}/shared/bootstrap/cache'"
+          scp -P "${SSH_PORT}" release.tar.gz ${SSH_USER}@${SSH_HOST}:"${DEPLOY_PATH}/"
+          ssh -p "${SSH_PORT}" ${SSH_USER}@${SSH_HOST} "tar -xzf '${DEPLOY_PATH}/release.tar.gz' -C '${DEPLOY_PATH}/releases/' && rm -f '${DEPLOY_PATH}/release.tar.gz'"
 
-      - name: Activate release on server
+      # Активируем релиз, линкуем shared, artisan-оптимизации и миграции
+      - name: Activate release
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_PORT: ${{ secrets.SSH_PORT }}
@@ -62,30 +77,31 @@ jobs:
           PHP_BIN: ${{ secrets.PHP_BIN }}
         run: |
           : ${SSH_PORT:=22}
-          : ${PHP_BIN:=php}
-
-          ssh -p ${SSH_PORT} ${SSH_USER}@${SSH_HOST} bash << EOSSH
+          ssh -p "${SSH_PORT}" ${SSH_USER}@${SSH_HOST} "bash -s" << 'EOSSH'
           set -e
-          DEPLOY_PATH="${DEPLOY_PATH:-/home/${SSH_USER}/apps/estate-bot}"
-          REL_DIR="\$DEPLOY_PATH/releases/${RELEASE_NAME}"
+          : "${DEPLOY_PATH:=/home/u3254477/apps/estate-bot}"
+          : "${PHP_BIN:=php}"
+          : "${RELEASE_NAME:?RELEASE_NAME is required}"
 
-          ln -sfn "\$DEPLOY_PATH/shared/.env" "\$REL_DIR/.env"
-          rm -rf "\$REL_DIR/storage"
-          ln -sfn "\$DEPLOY_PATH/shared/storage" "\$REL_DIR/storage"
-          mkdir -p "\$DEPLOY_PATH/shared/bootstrap/cache"
-          ln -sfn "\$DEPLOY_PATH/shared/bootstrap/cache" "\$REL_DIR/bootstrap/cache"
+          REL_DIR="$DEPLOY_PATH/releases/${RELEASE_NAME}"
 
-          cd "\$REL_DIR"
+          # symlinks к shared
+          ln -sfn "$DEPLOY_PATH/shared/.env" "$REL_DIR/.env"
+          rm -rf "$REL_DIR/storage"
+          ln -sfn "$DEPLOY_PATH/shared/storage" "$REL_DIR/storage"
+          ln -sfn "$DEPLOY_PATH/shared/bootstrap/cache" "$REL_DIR/bootstrap/cache"
 
-          ${PHP_BIN} artisan key:generate --force || true
-          ${PHP_BIN} artisan storage:link || true
-          ${PHP_BIN} artisan config:cache
-          ${PHP_BIN} artisan route:cache || true
-          ${PHP_BIN} artisan view:cache || true
-          ${PHP_BIN} artisan migrate --force || true
+          cd "$REL_DIR"
 
-          ln -sfn "\$REL_DIR" "\$DEPLOY_PATH/current"
-          chmod -R ug+rw "\$DEPLOY_PATH/shared/storage" "\$DEPLOY_PATH/shared/bootstrap/cache" || true
+          $PHP_BIN artisan key:generate --force || true
+          $PHP_BIN artisan storage:link || true
+          $PHP_BIN artisan config:cache
+          $PHP_BIN artisan route:cache || true
+          $PHP_BIN artisan view:cache || true
+          $PHP_BIN artisan migrate --force || true
+
+          ln -sfn "$REL_DIR" "$DEPLOY_PATH/current"
+          chmod -R ug+rw "$DEPLOY_PATH/shared/storage" "$DEPLOY_PATH/shared/bootstrap/cache" || true
 
           echo "✅ Deployed ${RELEASE_NAME}"
           EOSSH
