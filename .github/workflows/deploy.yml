@@ -54,38 +54,33 @@ jobs:
             ./ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.DEPLOY_PATH }}/releases/${{ env.RELEASE_NAME }}/
 
       - name: Activate release on server
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          port: ${{ secrets.SSH_PORT }}
-          script_stop: true
-          script: |
-            set -e
+        run: |
+          ssh -o StrictHostKeyChecking=no -p ${{ secrets.SSH_PORT }} \
+            ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOSSH'
+              set -e
 
-            DEPLOY_PATH="${DEPLOY_PATH:-/home/${USER}/apps/estate-bot}"
-            PHP_BIN="${PHP_BIN:-php}"
-            REL_DIR="$DEPLOY_PATH/releases/${RELEASE_NAME}"
+              DEPLOY_PATH="${DEPLOY_PATH:-/home/u3254477/apps/estate-bot}"
+              PHP_BIN="${PHP_BIN:-php}"
+              REL_DIR="$DEPLOY_PATH/releases/${RELEASE_NAME}"
 
-            # shared
-            ln -sfn "$DEPLOY_PATH/shared/.env" "$REL_DIR/.env"
-            rm -rf "$REL_DIR/storage"
-            ln -sfn "$DEPLOY_PATH/shared/storage" "$REL_DIR/storage"
-            mkdir -p "$DEPLOY_PATH/shared/bootstrap/cache"
-            ln -sfn "$DEPLOY_PATH/shared/bootstrap/cache" "$REL_DIR/bootstrap/cache"
+              # shared
+              ln -sfn "$DEPLOY_PATH/shared/.env" "$REL_DIR/.env"
+              rm -rf "$REL_DIR/storage"
+              ln -sfn "$DEPLOY_PATH/shared/storage" "$REL_DIR/storage"
+              mkdir -p "$DEPLOY_PATH/shared/bootstrap/cache"
+              ln -sfn "$DEPLOY_PATH/shared/bootstrap/cache" "$REL_DIR/bootstrap/cache"
 
-            cd "$REL_DIR"
+              cd "$REL_DIR"
 
-            $PHP_BIN artisan key:generate --force || true
-            $PHP_BIN artisan storage:link || true
-            $PHP_BIN artisan config:cache
-            $PHP_BIN artisan route:cache || true
-            $PHP_BIN artisan view:cache || true
-            $PHP_BIN artisan migrate --force || true
+              $PHP_BIN artisan key:generate --force || true
+              $PHP_BIN artisan storage:link || true
+              $PHP_BIN artisan config:cache
+              $PHP_BIN artisan route:cache || true
+              $PHP_BIN artisan view:cache || true
+              $PHP_BIN artisan migrate --force || true
 
-            ln -sfn "$REL_DIR" "$DEPLOY_PATH/current"
-            chmod -R ug+rw "$DEPLOY_PATH/shared/storage" "$DEPLOY_PATH/shared/bootstrap/cache" || true
+              ln -sfn "$REL_DIR" "$DEPLOY_PATH/current"
+              chmod -R ug+rw "$DEPLOY_PATH/shared/storage" "$DEPLOY_PATH/shared/bootstrap/cache" || true
 
-            echo "✅ Deployed ${RELEASE_NAME}"
-
+              echo "✅ Deployed ${RELEASE_NAME}"
+          EOSSH
