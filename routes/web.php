@@ -3,7 +3,7 @@
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
-    return view('welcome');
+    return ["Silence is gold."];
 });
 
 Route::get('/healths', fn() => response()->json(['ok'=>true,'ts'=>now()]));
