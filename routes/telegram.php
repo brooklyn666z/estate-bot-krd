@@ -73,4 +73,13 @@ $bot->onCommand('done', BroadcastDoneHandler::class);
 $bot->onCallbackQueryData('admin:broadcast:confirm', BroadcastConfirmHandler::class);
 $bot->onCallbackQueryData('admin:broadcast:restart', BroadcastConfirmHandler::class);
 
-$bot->onCallbackQueryData('survey_restart', StartSurveyHandler::class);
+$bot->onCallbackQueryData('survey_restart:{msgId}', function (Nutgram $bot, string $msgId) {
+    // удаляем сообщение с кнопкой
+    $bot->deleteMessage(
+        $bot->chatId(),
+        (int)$msgId
+    );
+
+    // запускаем новый цикл опроса
+    (new StartSurveyHandler())($bot);
+});

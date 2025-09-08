@@ -6,6 +6,8 @@ use App\Models\Lead; // если модель иначе названа — за
 use App\Telegram\Services\AdminNotifier;
 use App\Telegram\Survey\SurveyStorage;
 use SergiX44\Nutgram\Nutgram;
+use SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardButton;
+use SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardMarkup;
 
 class SavePhoneHandler
 {
@@ -70,14 +72,13 @@ class SavePhoneHandler
         $notifyText = "🆕 <b>Новая заявка</b>\n\n{$answersTxt}\n<b>Телефон:</b> {$phone}\n\n{$uLine}<b>Telegram ID:</b> <code>{$tgId}</code>\n<i>Время:</i> ".now();
         AdminNotifier::notify($bot, $notifyText, 'HTML');
 
-// Ответ пользователю
-        $bot->sendMessage(
+        $sent = $bot->sendMessage(
             "Спасибо! Мы свяжемся с вами в {$data['contact']} и пришлём подборку. ✅",
-            reply_markup: \SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardMarkup::make()
+            reply_markup: InlineKeyboardMarkup::make()
                 ->addRow(
-                    \SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardButton::make(
+                    InlineKeyboardButton::make(
                         text: '🔄 Возврат в меню',
-                        callback_data: 'survey_restart'
+                        callback_data: 'survey_restart:'.$bot->message()->message_id // передаём id сообщения
                     )
                 )
         );
