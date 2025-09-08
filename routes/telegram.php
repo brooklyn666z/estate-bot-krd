@@ -72,3 +72,5 @@ $bot->onCommand('done', BroadcastDoneHandler::class);
 
 $bot->onCallbackQueryData('admin:broadcast:confirm', BroadcastConfirmHandler::class);
 $bot->onCallbackQueryData('admin:broadcast:restart', BroadcastConfirmHandler::class);
+
+$bot->onCallbackQueryData('survey_restart', StartSurveyHandler::class);
