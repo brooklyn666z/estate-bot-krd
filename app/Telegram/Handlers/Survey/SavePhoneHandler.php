@@ -72,8 +72,14 @@ class SavePhoneHandler
 
 // Ответ пользователю
         $bot->sendMessage(
-            "Спасибо! Мы свяжемся с вами в {$data['contact']} и пришлём подборку. ✅" . PHP_EOL .
-            "Для новой заявки на подбор введите /start"
+            "Спасибо! Мы свяжемся с вами в {$data['contact']} и пришлём подборку. ✅",
+            reply_markup: \SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardMarkup::make()
+                ->addRow(
+                    \SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardButton::make(
+                        text: '🔄 Возврат в меню',
+                        callback_data: 'survey_restart'
+                    )
+                )
         );
 
 // Сброс состояния
